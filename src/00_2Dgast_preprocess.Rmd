@@ -1,0 +1,151 @@
+---
+title: "00_2D_gast_preprocess"
+author: "achemkhi"
+date: "2024-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(dplyr)
+library(grid)
+library(gridExtra)
+library(here)
+library(fs)
+library(millefy)
+setwd("~/Desktop/myProjects/2D_gast")
+fs::link_create(path = "/Users/alichemkhi/Desktop/data", new_path = "data")# create symbolic link to data="/Users/alichemkhi/Desktop/data"
+fs::link_create(path = "/Users/alichemkhi/Desktop/myProjects/renv", new_path = "renv")# create symbolic link to data="/Users/alichemkhi/Desktop/data"
+
+```
+
+## Load raw data 
+```{r}
+
+# read count matrices
+data.fs.read.1 <- as.matrix(Read10X(data.dir ="../data/2dgas-fs/raw_data/Plate1/analysis_results/Matrices/10XlikeMatrix_read_unzipped"))
+data.fs.read.2.3 <- as.matrix(Read10X(data.dir ="../data/2dgas-fs/raw_data/Plate2-3/analysis_results/Matrices/10XlikeMatrix_read_unzipped"))
+
+list.genes <- intersect(row.names(data.fs.read.1),row.names(data.fs.read.2.3))
+data.fs.read <- cbind(data.fs.read.1[list.genes,],data.fs.read.2.3[list.genes,])
+colnames(data.fs.read) <- substring(colnames(data.fs.read), first = 1, last = regexpr("_",unique(colnames(data.fs.read)))[1]-1)
+
+data.fs.read.save <- data.fs.read
+row.names(data.fs.read.save) <- toupper(row.names(data.fs.read.save))
+write.table(data.fs.read.save,"../output/RawReadMatrix.txt")
+
+```
+
+## normalize with respect to gene length 
+```{r}
+require(org.Mm.eg.db)
+
+# In rsem.table gene length = sum(exons_length) ? 
+rsem.table <- read.table('../data/2dgas-fs/raw_data/D1439T380_Sorted.genes.txt',header = T) # + length 
+genes_id <- rsem.table$gene_id
+genes_name <- mapIds(org.Mm.eg.db,
+                     keys = genes_id,
+                     column = 'SYMBOL',
+                     keytype = 'ENSEMBL')
+genes_name.table <- data.frame(row.names = NULL,
+                  gene_id =names(genes_name),
+                  SYMBOL  = genes_name)
+
+# define length vector 
+rsem.table.symbol <- left_join(rsem.table, genes_name.table, by = "gene_id")
+genes_length=rsem.table.symbol$length
+names(genes_length)<-rsem.table.symbol$SYMBOL
+head(genes_length)
+length(genes_length)
+sum(is.na(genes_length)); 
+
+# Add missing genes not found in D1439T380_Sorted.genes.txt'
+path_gtf = c("../data/2dgas-fs/raw_data/mm10_genes.gtf") 
+dt_gtf_exon <- gtfToDtExon(path_gtf) # retrieving only exons 
+dt_gtf_exon$gene_name <- substring(dt_gtf_exon$transcript_name,first=1, last = regexpr("-2",dt_gtf_exon$transcript_name)-1)
+
+other.genes <- unique(dt_gtf_exon$gene_name)[!(unique(dt_gtf_exon$gene_name) %in% names(genes_length))]
+for (gene.i in other.genes){
+  gene.i.exon <- dt_gtf_exon[dt_gtf_exon$transcript_name==paste(gene.i,"-201",sep=""),] #NOTE :  get only the first canonical or primary isoform -201 to calculate the gene length 
+  genes_length[gene.i] <- sum(gene.i.exon$end) - sum(gene.i.exon$start)
+}
+head(genes_length)
+length(genes_length)
+sum(is.na(genes_length))
+
+```
+
+```{r}
+# Prepare new matrix to populate with the normalized values 
+data.fs.transcript <- matrix(NA, nrow = nrow(data.fs.read), ncol = ncol(data.fs.read))
+colnames(data.fs.transcript) <- colnames(data.fs.read)
+row.names(data.fs.transcript) <- row.names(data.fs.read)
+
+all.genes=row.names(data.fs.transcript) # all genes in the count matrix  
+genes.with.no.length<-all.genes[!all.genes %in% names(genes_length)]  # genes that don't have a length for the normalization step 
+print("genes with no length info "); length(genes.with.no.length) 
+
+# NORMALIZE w.r.t length 
+for (gene.i in row.names(data.fs.transcript)) {
+  data.fs.transcript[gene.i,] <- 100*data.fs.read[gene.i,]/genes_length[gene.i]
+}
+dim(data.fs.transcript)
+data.fs.transcript <- na.omit(round(data.fs.transcript+0.33)) # remove na 
+dim(data.fs.transcript)
+write.table(data.fs.transcript,"../output/TranscriptEstimationMatrix.ALI.txt")
+```
+## Mismatch in ../output/TranscriptEstimationMatrix.ALI.txt
+
+```{r}
+
+
+```
+```{r}
+```
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
