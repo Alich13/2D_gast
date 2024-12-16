@@ -1,3 +1,8 @@
 data/*
 output/*
 .Rproj.user
+.R*
+renv
+.DS_Store
+*Rproj
+data
