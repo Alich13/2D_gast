@@ -2,7 +2,12 @@
 title: "00_2D_gast_preprocess"
 author: "achemkhi"
 date: "2024-12-06"
-output: html_document
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document: default
+    
 bibliography: references.bib
 ---
 
@@ -172,7 +177,7 @@ data.fs.read["Atp5o",1:10] # raw
 data.fs.transcript["Atp5o",1:10] # normalized w.r.t length  
 ```
 
-# --- 
+# ---
 
 # Create a Seurat object
 
@@ -250,7 +255,7 @@ table(dataset.fs@meta.data$orig.ident)
 
 ```
 
-## QC filtering 
+## QC filtering
 
 ```{r}
 
@@ -312,7 +317,7 @@ FeatureScatter(object = dataset.fs, feature1 = "nCount_RNA", feature2 = "GAPDH",
 
 -   low MT transcript count in t37-wnt
 
-## Normalize and scale 
+## Normalize and scale
 
 ```{r}
 ## Scale the data to have 80000 transcript (the mean is 85000) in each cell and then, normalizing the data with log1p
@@ -358,7 +363,7 @@ plot2
 
 ```
 
-## PCA : 
+## PCA :
 
 By default, only the previously determined variable features are used as input, but can be defined using `features` argument if you wish to choose a different subset
 
@@ -486,7 +491,7 @@ VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
 
 ```
 
-### Use different resolutions to cluster points 
+### Use different resolutions to cluster points
 
 ```{r}
 
@@ -500,7 +505,7 @@ DimPlot(dataset.fs,group.by = "RNA_snn_res.0.5")
 VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.3")
 ```
 
-## Remove trash cells 
+## Remove trash cells
 
 ```{r}
 # remove cluster 3 because it has low RNA count 
@@ -517,7 +522,7 @@ table(dataset.filtered.fs$RNA_snn_res.0.1)
 
 ```
 
-## Re-run PCA-UMP : after filtering 
+## Re-run PCA-UMP : after filtering
 
 ```{r}
 # Detection of variable genes across the single cells (the main parameter is y.cutoff, the higher the more
@@ -573,7 +578,7 @@ DimPlot(dataset.filtered.fs,label = TRUE, reduction = "umap",dims=c(1,2))
 
 ```
 
-## Save Seurat object 
+## Save Seurat object
 
 ```{r}
 dataset.filtered.fs
@@ -733,7 +738,7 @@ filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_category_BMP.txt",sep ="/")
 write.table(category.order.use,filename,row.names = FALSE)
 ```
 
-# Results & discussions 
+# Results & discussions
 
 1.  Compare both <https://miic.curie.fr/job_results_comparison.php?id=Y7zM0NGbFXRTCCpIkS3c>
 
@@ -760,12 +765,9 @@ write.table(category.order.use,filename,row.names = FALSE)
 ```{r}
 ```
 
-```{r}
-```
+# ---
 
-# --- 
-
-# Compare my SO with Gael's object 
+# Compare my SO with Gael's object
 
 ```{r}
 # Load the datasets
@@ -811,11 +813,9 @@ specific_to_vector1
 
 VlnPlot(subset(x = dataset.fs,cells = specific_to_vector1,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
 
-VlnPlot(subset(x = dataset.fs,cells = specific_to_vector3,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
-
-VlnPlot(subset(x = dataset.fs,cells = specific_to_vector4,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
-
-VlnPlot(dataset.fs,features = c("nCount_RNA"),group.by = "condition")
-```
-
+# VlnPlot(subset(x = dataset.fs,cells = specific_to_vector3,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
 # 
+# VlnPlot(subset(x = dataset.fs,cells = specific_to_vector4,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
+# 
+# VlnPlot(dataset.fs,features = c("nCount_RNA"),group.by = "condition")
+```
