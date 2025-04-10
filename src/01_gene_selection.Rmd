@@ -1,0 +1,331 @@
+---
+author: "achemkhi"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+
+## Init env
+To make sure that the environment is clean and the working directory is set to the project root.
+
+```{r, warning = FALSE }
+# remove  all objects from the environment (optional)
+rm(list=ls())
+# set the working directory to the project root
+library(this.path)
+current_file_path <- this.path::this.path()
+current_dir_path <- dirname(current_file_path) # scr
+project_dir_path <- dirname(current_dir_path) 
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir =project_dir_path)
+setwd(project_dir_path)
+getwd()
+```
+
+## Import libraries
+
+```{r, warning = FALSE }
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+
+# CD to the miic folder
+#R CMD INSTALL --library=/Users/alichemkhi/Desktop/code/miic_lib_210 ./
+library(miic ,lib.loc="/Users/alichemkhi/Desktop/code/miic_lib_210") 
+# check miic version
+packageVersion("miic")
+
+
+```
+
+
+
+# DEFINITIONS 
+
+## predefined list of genes 
+```{r}
+# ALL TF and regulators 
+TF_list=read.csv("data/TFs.tsv",sep="\t") %>% pull(TF)
+REG_list=read.csv("data/REGs.tsv",sep="\t") %>% pull(x)
+
+list.gene.use.1 <- sort(c("NANOG","NKX1-2","OTX2","POU3F1","POU5F1","SOX2","UTF1",
+                   "EOMES","MIXL1","T","SP5",
+                   "FOXA1","FOXA2","GSC","HHEX","LHX1","SOX17","SOX21",
+                   "FOXJ1","MAK","NOTO",
+                   "FOXC1","FOXC2","MEIS2","SNAI1","TBX6","TWIST1",
+                   "GATA4","GATA6","MESP1","MESP2","MSX1",
+                   "FOXF1","HOXB1","ISL1","PITX2","PRDM6","TBX3",
+                   "ETV2","GATA2","GATA3","HAND1","LMO2","MSX2","SMAD1","TBX20",
+                   "CDX2","CITED1","NMI","PARP9","PRDM1","PRDM14","SMAD6","SMAD7",
+                   "BMP4","ID1","ID2","ID3","AXIN2","LEF1","WNT3","WNT3A",
+                   "LEFTY1","LEFTY2","NODAL","TDGF1"))
+
+
+#all_genes<-rownames(dataset.so_BMP)
+#my_genes_literature[!my_genes_literature %in% all_genes]
+
+
+
+# TFs
+other.tf <- c("ID3","LEF1","POU5F1","PRDM1","PRDM14","T","FOXH1",
+              "SMAD1","SMAD2","SMAD3","SMAD4","SMAD5","SMAD6","SMAD7",
+              "AXIN2","BMP4","FGF5","FGF8","LEFTY1","LEFTY2","NODAL","TDGF1","TGFB1","WNT3")
+
+
+my_genes_literature <- union(list.gene.use.1,other.tf) # genes that we know from literature
+
+
+
+
+library(org.Mm.eg.db)
+x <- org.Mm.eg.db
+goall <- data.frame(AnnotationDbi::select(x, keys(x), "GOALL"))
+symbol <- AnnotationDbi::select(x, keys(x), "SYMBOL")
+# Heatmap of top TF
+GO.tf <- "GO:0140110" #  transcription regulator activity : GO:0140110
+entrezid <- unique(na.omit(goall[goall$GOALL==GO.tf,])$ENTREZID)
+GO.genes.tf <- symbol[symbol$ENTREZID %in% entrezid,]$SYMBOL
+
+
+
+
+```
+
+## Config 
+-----------------------> **Update THIS !!** <--------------------------
+```{r}
+# Analysis name
+name<-"2D_gast" 
+# seurat object
+dataset.path<-"output/v0.1/dataset.filtered.rds"
+# The variables of interest
+myfoi=my_genes_literature
+
+#c(
+#  "ID1", # readout of BMP signalling
+#  "EOMES", # a downstream effector of BMP signaling in early development, helping drive mesendodermal fate BMP + WNT → SMAD + β-catenin → EOMES → EVX1 → posterior mesoderm identity
+#  "T",
+#  "WNT3A")
+
+
+# Add metadata for MI selection 
+# These need to be added else we won't find association with our variables of interest
+metadata<- list(
+  time=NULL
+)
+
+#Filters
+filters_BMP = list(
+  condition="BMP"
+)
+
+#Filters
+filters_WNT = list(
+  condition="WNT"
+)
+
+
+# Directories 
+OUTDIR="output/v0.1"
+
+# State order 
+groups=list(
+  
+)
+
+
+# Set contextual variables 
+contextual=c("condition")
+
+
+```
+
+# Prepare 
+```{r}
+# if not in metadata ,foi must be in gene list
+# if not it will be detected later
+foi_genes <- myfoi[! myfoi %in% names(metadata)]
+if (length(foi_genes)==0){foi_genes<-NULL}
+
+# mkdir output folder if it does not exist  
+analysis_prefix =paste0(name) 
+
+run_outdir=file.path(OUTDIR, analysis_prefix)
+if (!dir.exists(run_outdir)) {
+  dir.create(run_outdir, recursive = TRUE)
+}
+
+run_outdir_BMP=file.path(run_outdir,"BMP")
+if (!dir.exists(run_outdir_BMP)) {
+  dir.create(run_outdir_BMP, recursive = TRUE)
+}
+
+run_outdir_WNT=file.path(run_outdir,"WNT")
+if (!dir.exists(run_outdir_WNT)) {
+  dir.create(run_outdir_WNT, recursive = TRUE)
+}
+
+```
+
+
+----
+
+```{r}
+
+source("../miic_helper/src/preprocess_sureat_object.R") # helper functions to preprocess miic inputs 
+
+dataset.so     <- readRDS(file =dataset.path)
+gene.list.tf   <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.so@assays$RNA$counts))) 
+selection_pool <- unique(c(my_genes_literature,gene.list.tf)) # genes to select from
+
+# FILTER
+dataset.so_BMP <- Filter_seurat_object(dataset.so,filters_BMP) 
+BMP_matrix<-dataset.so_BMP@assays$RNA$counts[selection_pool,]
+
+
+if (ENABLE_MI_SELECTION) {
+
+  mi_scores_BMP<-miic::selectFeatures(
+    t(BMP_matrix),
+    n_features=NULL,
+    var_of_interest_names=my_genes_literature,
+    n_threads=6, verbose=3, plot=T)
+
+  matrix_melt<-reshape2::melt(mi_scores_BMP$mis) 
+  names(matrix_melt) <-  c("variables","foi","value")
+  # save selection as tsv
+  write.table(matrix_melt,
+              file=file.path(run_outdir_BMP,"SELECT_MI_table.csv"),sep="\t",quote = F,row.names = F)
+
+}
+
+
+# FILTER
+dataset.so_WNT <- Filter_seurat_object(dataset.so,filters_WNT) 
+WNT_matrix<- dataset.so_WNT@assays$RNA$counts[selection_pool,]
+
+if (ENABLE_MI_SELECTION) {
+
+  mi_scores_WNT<-miic::selectFeatures(
+    t(WNT_matrix),
+    n_features=NULL,
+    var_of_interest_names=my_genes_literature,
+    n_threads=6, verbose=3, plot=T)
+
+  matrix_melt<-reshape2::melt(mi_scores_WNT$mis) 
+  names(matrix_melt) <-  c("variables","foi","value")
+  # save selection as tsv
+  write.table(matrix_melt,
+              file=file.path(run_outdir_WNT,"SELECT_MI_table.csv"),sep="\t",quote = F,row.names = F)
+
+}
+
+```
+
+
+
+
+# Run MI smart selection - run_outdir_BMP
+```{r}
+
+MI_selection=read.csv(file=file.path(run_outdir_BMP,"SELECT_MI_table.csv"),sep="\t")
+
+group_size<-5
+selected.genes_df<-MI_selection %>%
+  filter(foi %in% myfoi) %>% 
+  group_by(foi) %>% 
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size) 
+
+length(my_genes_literature)
+length(intersect(selected.genes_df$variables,my_genes_literature))
+intersect(selected.genes_df$variables,my_genes_literature)
+
+# save selection as tsv
+write.table(selected.genes_df,
+           file=file.path(run_outdir,"selection_bmp.tsv"),sep="\t",quote = F,row.names = F)
+
+# selection heatmap
+file_name<-paste("selection_heatmap_bmp.png",sep = ".")
+outpath=file.path(run_outdir,file_name)
+selection<-MI_selection %>% filter(variables %in% selected.genes_df$variables & foi %in% c(myfoi))
+MI_heatmap(selection,toupper(my_genes_literature ),"",outpath)
+
+
+
+
+cat("============ Genereting MIIC input files ================ :\n")
+# Generate miic outputs 
+# Generate_miic_files(
+#     dataset.so,
+#     network_variables,
+#     metadata,
+#     myfoi,
+#     run_outdir,
+#     analysis_prefix,
+#     groups=groups,
+#     assert_consequence=c(),
+#     contextual=contextual
+# )
+
+```
+
+# Run MI smart selection - run_outdir_WNT
+
+```{r}
+MI_selection=read.csv(file=file.path(run_outdir_WNT,"SELECT_MI_table.csv"),sep="\t")
+
+
+group_size<-5
+selected.genes_df<-MI_selection %>%
+  filter(foi %in% myfoi) %>% 
+  group_by(foi) %>% 
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size) 
+
+length(my_genes_literature)
+length(intersect(selected.genes_df$variables,my_genes_literature))
+intersect(selected.genes_df$variables,my_genes_literature)
+
+
+# save selection as tsv
+write.table(selected.genes_df,
+           file=file.path(run_outdir,"selection_wnt.tsv"),sep="\t",quote = F,row.names = F)
+
+# selection heatmap
+file_name<-paste("selection_heatmap_wnt.png",sep = ".")
+outpath=file.path(run_outdir,file_name)
+selection<-MI_selection %>% filter(variables %in% selected.genes_df$variables & foi %in% c(myfoi))
+MI_heatmap(selection,toupper(my_genes_literature),"",outpath)
+
+
+
+
+cat("============ Genereting MIIC input files ================ :\n")
+# Generate miic outputs 
+# Generate_miic_files(
+#     dataset.so,
+#     network_variables,
+#     metadata,
+#     myfoi,
+#     run_outdir,
+#     analysis_prefix,
+#     groups=groups,
+#     assert_consequence=c(),
+#     contextual=contextual
+# )
+```
+
+
+
+# Results 
+
+```
+
+```
