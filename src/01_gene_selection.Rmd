@@ -50,6 +50,7 @@ packageVersion("miic")
 
 ## predefined list of genes 
 ```{r}
+
 # ALL TF and regulators 
 TF_list=read.csv("data/TFs.tsv",sep="\t") %>% pull(TF)
 REG_list=read.csv("data/REGs.tsv",sep="\t") %>% pull(x)
@@ -75,7 +76,7 @@ list.gene.use.1 <- sort(c("NANOG","NKX1-2","OTX2","POU3F1","POU5F1","SOX2","UTF1
 # TFs
 other.tf <- c("ID3","LEF1","POU5F1","PRDM1","PRDM14","T","FOXH1",
               "SMAD1","SMAD2","SMAD3","SMAD4","SMAD5","SMAD6","SMAD7",
-              "AXIN2","BMP4","FGF5","FGF8","LEFTY1","LEFTY2","NODAL","TDGF1","TGFB1","WNT3")
+              "AXIN2","BMP4","FGF5","FGF8","LEFTY1","LEFTY2","NODAL","TDGF1","TGFB1","WNT3","CTNNB1") # added CTNNB1
 
 
 my_genes_literature <- union(list.gene.use.1,other.tf) # genes that we know from literature
@@ -107,17 +108,28 @@ dataset.path<-"output/v0.1/dataset.filtered.rds"
 # The variables of interest
 myfoi=my_genes_literature
 
-#c(
-#  "ID1", # readout of BMP signalling
-#  "EOMES", # a downstream effector of BMP signaling in early development, helping drive mesendodermal fate BMP + WNT → SMAD + β-catenin → EOMES → EVX1 → posterior mesoderm identity
-#  "T",
-#  "WNT3A")
+myfoi_shortlist<-c(
+  "BMP4" ,
+  "ID1", # readout of BMP signalling
+  "EOMES", # a downstream effector of BMP signaling in early development, helping drive mesendodermal fate BMP + WNT → SMAD + β-catenin → EOMES → EVX1 → posterior mesoderm identity
+  "T",
+  "CTNNB1", # β-catenin
+  "NODAL", # Nodal
+  "AXIN2", # AXIN2 is commonly used as a readout of canonical WNT/β-catenin pathway activity — like ID1 is for BMP.
+  "WNT3A",
+  "WNT3")
+
+
 
 
 # Add metadata for MI selection 
 # These need to be added else we won't find association with our variables of interest
 metadata<- list(
-  time=NULL
+  time=NULL,
+  mtMean=NULL,
+  rplMean=NULL,
+  rpsMean=NULL
+
 )
 
 #Filters
@@ -141,7 +153,7 @@ groups=list(
 
 
 # Set contextual variables 
-contextual=c("condition")
+contextual=c()
 
 
 ```
@@ -182,20 +194,21 @@ source("../miic_helper/src/preprocess_sureat_object.R") # helper functions to pr
 
 dataset.so     <- readRDS(file =dataset.path)
 gene.list.tf   <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.so@assays$RNA$counts))) 
-selection_pool <- unique(c(my_genes_literature,gene.list.tf)) # genes to select from
+selection_pool <- unique(c(my_genes_literature,gene.list.tf)) # TFs + genes from literature
+metadata_cols <- names(metadata)
 
 # FILTER
-dataset.so_BMP <- Filter_seurat_object(dataset.so,filters_BMP) 
+dataset.so_BMP <- Filter_seurat_object(dataset.so,filters_BMP)
 BMP_matrix<-dataset.so_BMP@assays$RNA$counts[selection_pool,]
-
+BMP_matrix<-cbind(t(BMP_matrix), dataset.so_BMP@meta.data[metadata_cols])
 
 if (ENABLE_MI_SELECTION) {
 
   mi_scores_BMP<-miic::selectFeatures(
-    t(BMP_matrix),
+    BMP_matrix,
     n_features=NULL,
-    var_of_interest_names=my_genes_literature,
-    n_threads=6, verbose=3, plot=T)
+    var_of_interest_names=c(my_genes_literature,metadata_cols),
+    n_threads=6, verbose=3, plot=F)
 
   matrix_melt<-reshape2::melt(mi_scores_BMP$mis) 
   names(matrix_melt) <-  c("variables","foi","value")
@@ -209,14 +222,15 @@ if (ENABLE_MI_SELECTION) {
 # FILTER
 dataset.so_WNT <- Filter_seurat_object(dataset.so,filters_WNT) 
 WNT_matrix<- dataset.so_WNT@assays$RNA$counts[selection_pool,]
+WNT_matrix<-cbind(t(WNT_matrix), dataset.so_WNT@meta.data[metadata_cols])
 
 if (ENABLE_MI_SELECTION) {
 
   mi_scores_WNT<-miic::selectFeatures(
-    t(WNT_matrix),
+    WNT_matrix,
     n_features=NULL,
-    var_of_interest_names=my_genes_literature,
-    n_threads=6, verbose=3, plot=T)
+    var_of_interest_names=c(my_genes_literature,metadata_cols),
+    n_threads=6, verbose=3, plot=F)
 
   matrix_melt<-reshape2::melt(mi_scores_WNT$mis) 
   names(matrix_melt) <-  c("variables","foi","value")
@@ -236,12 +250,21 @@ if (ENABLE_MI_SELECTION) {
 
 MI_selection=read.csv(file=file.path(run_outdir_BMP,"SELECT_MI_table.csv"),sep="\t")
 
+
 group_size<-5
 selected.genes_df<-MI_selection %>%
   filter(foi %in% myfoi) %>% 
   group_by(foi) %>% 
   arrange(desc(value) , .by_group = TRUE) %>%
   slice_head(n = group_size) 
+
+group_size_short_list<-30
+selected.genes_short_list_df<-MI_selection %>%
+  filter(foi %in% myfoi_shortlist) %>% 
+  group_by(foi) %>% 
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size_short_list) 
+
 
 length(my_genes_literature)
 length(intersect(selected.genes_df$variables,my_genes_literature))
@@ -255,24 +278,31 @@ write.table(selected.genes_df,
 file_name<-paste("selection_heatmap_bmp.png",sep = ".")
 outpath=file.path(run_outdir,file_name)
 selection<-MI_selection %>% filter(variables %in% selected.genes_df$variables & foi %in% c(myfoi))
-MI_heatmap(selection,toupper(my_genes_literature ),"",outpath)
+MI_heatmap(selection,toupper(my_genes_literature ),"bmp selection ",outpath)
 
 
+# heatmap of the short list
+file_name<-paste("selection_shortlist_heatmap_bmp.png",sep = ".")
+outpath=file.path(run_outdir,file_name)
+selection_short <-MI_selection %>% filter(variables %in% selected.genes_short_list_df$variables & foi %in% c(myfoi_shortlist))
+MI_heatmap(selection_short,toupper(my_genes_literature),"bmp short list selection",outpath)
 
+
+network_selected_variables<-unique(selection_short$variables)
 
 cat("============ Genereting MIIC input files ================ :\n")
 # Generate miic outputs 
-# Generate_miic_files(
-#     dataset.so,
-#     network_variables,
-#     metadata,
-#     myfoi,
-#     run_outdir,
-#     analysis_prefix,
-#     groups=groups,
-#     assert_consequence=c(),
-#     contextual=contextual
-# )
+ Generate_miic_files(
+     dataset.so_BMP,
+     network_selected_variables,
+     metadata,
+     c(myfoi_shortlist,metadata_cols),
+     run_outdir,
+     paste0(analysis_prefix,"_bmp"),
+     groups=groups,
+     assert_consequence=c(),
+     contextual=contextual
+ )
 
 ```
 
@@ -289,6 +319,13 @@ selected.genes_df<-MI_selection %>%
   arrange(desc(value) , .by_group = TRUE) %>%
   slice_head(n = group_size) 
 
+group_size_short_list<-30
+selected.genes_short_list_df<-MI_selection %>%
+  filter(foi %in% myfoi_shortlist) %>% 
+  group_by(foi) %>% 
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size_short_list) 
+
 length(my_genes_literature)
 length(intersect(selected.genes_df$variables,my_genes_literature))
 intersect(selected.genes_df$variables,my_genes_literature)
@@ -302,24 +339,30 @@ write.table(selected.genes_df,
 file_name<-paste("selection_heatmap_wnt.png",sep = ".")
 outpath=file.path(run_outdir,file_name)
 selection<-MI_selection %>% filter(variables %in% selected.genes_df$variables & foi %in% c(myfoi))
-MI_heatmap(selection,toupper(my_genes_literature),"",outpath)
+MI_heatmap(selection,toupper(my_genes_literature),"wnt selection",outpath)
+
+# heatmap of the short list
+file_name<-paste("selection_shortlist_heatmap_wnt.png",sep = ".")
+outpath=file.path(run_outdir,file_name)
+selection_short <-MI_selection %>% filter(variables %in% selected.genes_short_list_df$variables & foi %in% c(myfoi_shortlist))
+MI_heatmap(selection_short,toupper(my_genes_literature)," wnt short list selection",outpath)
 
 
-
+network_selected_variables<-unique(selection_short$variables)
 
 cat("============ Genereting MIIC input files ================ :\n")
 # Generate miic outputs 
-# Generate_miic_files(
-#     dataset.so,
-#     network_variables,
-#     metadata,
-#     myfoi,
-#     run_outdir,
-#     analysis_prefix,
-#     groups=groups,
-#     assert_consequence=c(),
-#     contextual=contextual
-# )
+ Generate_miic_files(
+     dataset.so_WNT,
+     network_selected_variables,
+     metadata,
+     c(myfoi_shortlist,metadata_cols),
+     run_outdir,
+     paste0(analysis_prefix,"_wnt"),
+     groups=groups,
+     assert_consequence=c(),
+     contextual=contextual
+ )
 ```
 
 
