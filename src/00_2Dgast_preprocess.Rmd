@@ -20,7 +20,8 @@ All upstream analysis steps before running MIIC
 ```{r}
 # this is version used to generate all the results and intermidiate files.
 # please commit your changes after fixing the version and passing the results to MIIC 
-P_VERSION="v0" # using GAEL seurat object 
+
+P_VERSION="v0.1" # using GAEL seurat object 
 
 OUTDIR=paste("~/Desktop/myProjects/2D_gast/output",P_VERSION,sep="/")
 
@@ -52,6 +53,7 @@ data.fs.read.2.3 <- as.matrix(Read10X(data.dir ="../data/2dgas-fs/raw_data/Plate
 
 list.genes <- intersect(row.names(data.fs.read.1),row.names(data.fs.read.2.3))
 data.fs.read <- cbind(data.fs.read.1[list.genes,],data.fs.read.2.3[list.genes,])
+
 colnames(data.fs.read) <- substring(colnames(data.fs.read), first = 1, last = regexpr("_",unique(colnames(data.fs.read)))[1]-1)
 
 data.fs.read.save <- data.fs.read
@@ -63,7 +65,7 @@ write.table(data.fs.read.save,paste(OUTDIR,"RawReadMatrix.txt",sep ="/"))
 
 # Transcript Count estimation
 
-The total raw count is not equivalent to how many times the gene was transcribed because in flash-seq and full-length methods in general, you may have multiple reads comming from the same transcript (molecule) , we have to estimate the real number of transcripts .
+The total raw count is not equivalent to how many times the gene was transcribed because in flash-seq and full-length methods in general, you may have multiple reads coming from the same transcript (molecule) , we have to estimate the real number of transcripts .
 
 ## 1- Estimate transcript counts : Divide with length
 
@@ -89,7 +91,7 @@ head(genes_length)
 length(genes_length)
 sum(is.na(genes_length)); 
 
-# Add missing genes not found in D1439T380_Sorted.genes.txt'
+# Add missing genes - not found in D1439T380_Sorted.genes.txt'
 path_gtf = c("../data/2dgas-fs/raw_data/mm10_genes.gtf") 
 dt_gtf_exon <- gtfToDtExon(path_gtf) # retrieving only exons 
 dt_gtf_exon$gene_name <- substring(dt_gtf_exon$transcript_name,first=1, last = regexpr("-2",dt_gtf_exon$transcript_name)-1)
@@ -123,63 +125,7 @@ write.table(data.fs.transcript,paste(OUTDIR,"TranscriptEstimationMatrix.txt",sep
 
 ```
 
-> ! mismatch not same output as Gael
-
-## 2- Estimate transcript counts : using coverage
-
-```{r}
-library(rtracklayer)
-path_gtf = c('../data/2dgas-fs/raw_data/mm10_genes.gtf')
-gtf_mm10 <- import(path_gtf)
-gtf_mm10 <- gtf_mm10[gtf_mm10$type == "transcript",]
-list.genes <- sort(unique(gtf_mm10$gene_name))
-
-# # create a data frame with mm10 gene ranges 
-# df.gene.ranges <-data.frame(chr=character(),min=integer(),max=integer())
-# for (gene.i in list.genes){
-#   gtf_mm10.i <- gtf_mm10[gtf_mm10$gene_name == gene.i,]
-#   chr.i <- gtf_mm10.i@seqnames@values[1]
-#   min.i <- min(gtf_mm10.i@ranges@start)
-#   max.i <- max(gtf_mm10.i@ranges@start+gtf_mm10.i@ranges@width-1)
-#   df.gene.ranges[gene.i,"chr"] <- as.character(chr.i)
-#   df.gene.ranges[gene.i,c("min","max")] <- c(min.i,max.i)
-# }
-# 
-# 
-# list_files <- list.files('../data/2dgas-fs/raw_data/Plate1/analysis_results/bigWig',pattern ="*.bw")
-# data.fs.transcript.cov <- matrix(0, nrow = length(list.genes), ncol = length(list_files))
-# 
-# for (j in 1:length(list_files)){
-#   file.j <- list_files[j]
-#   cell.j <- substring(file.j, first = 1, last = regexpr("_",file.j)-1)
-#   #print(paste("../data/2dgas-fs/raw_data/Plate1/analysis_results/bigWig",file.j,sep="/"))
-#   matrix <- read.table(paste("../data/2dgas-fs/raw_data/Plate1/analysis_results/bigWig",file.j,sep="/"),col.names = c("chr","min","max","f"))
-#   expression <- rep(0,length(list.genes))
-#   for (i in 1:length(list.genes)){
-#     gene.i <- list.genes[i]
-#     df.gene.ranges.gene.i <- df.gene.ranges[row.names(df.gene.ranges)==gene.i,]
-#     matrix.i <- matrix[(matrix$chr == df.gene.ranges.gene.i$chr)&
-#                          (matrix$min >= df.gene.ranges.gene.i$min)&
-#                          (matrix$max <= df.gene.ranges.gene.i$max),]
-#     if (nrow(matrix.i) > 0){
-#       expression[i] <- max(matrix.i$cov)
-#     }
-#   }
-#   data.fs.transcript.cov[,j] <- expression
-# }
-
-```
-
-## 3- View estimation effects
-
-```{r}
-data.fs.read["Atp5o",1:10] # raw 
-data.fs.transcript["Atp5o",1:10] # normalized w.r.t length  
-```
-
-# ---
-
-# Create a Seurat object
+# UMI counts versus Reads counts 
 
 ```{r}
 
@@ -199,16 +145,7 @@ data.x1 <- log1p(colSums(data.fs.transcript.test))
 data.y1 <- log1p(colSums(data.fs.umi))
 dat1 <- data.frame(x = data.x1, y = data.y1)
 
-
-
-
-```
-
-## Explore data : gene correlation ...
-
-```{r}
-library(ggpubr)
-library(Cairo)
+library(ggplot2)
 library(stringr) 
 
 size=2
@@ -229,29 +166,33 @@ p <- ggplot(data = dat1, mapping = aes(x = x, y = y)) +
 p
 
 
-
-
 ```
+
+# Create transcript seurat object 
 
 ## Samples info
 
 ```{r}
+data.fs.transcript <- as.matrix(read.table(paste(OUTDIR,"TranscriptEstimationMatrix.txt",sep ="/")))
+
 sample.information <- read.table(file="../data/2dgas-fs/raw_data/sample_information.txt"
                                  ,header = TRUE)[colnames(data.fs.transcript),]
 
 cells <- paste(sample.information$time,sample.information$condition,sep="-")
-
 row.names(data.fs.transcript) <- toupper(row.names(data.fs.transcript))
 colnames(data.fs.transcript) <- paste(cells,"_",colnames(data.fs.transcript ),sep="")
 
-# 23356-1101
 dataset.fs <- CreateSeuratObject(data.fs.transcript , project = "fs", min.cells = 1)
 dataset.fs@meta.data$cells <- dataset.fs@active.ident
 dataset.fs@meta.data$time <- as.factor(sample.information$time)
 dataset.fs@meta.data$condition <- as.factor(sample.information$condition)
 
 # value counts 
+dataset.fs
 table(dataset.fs@meta.data$orig.ident)
+head(dataset.fs@meta.data)
+
+
 
 ```
 
@@ -268,7 +209,9 @@ mito.genes <- grep(pattern = "^MT-", x = rownames(x = GetAssayData(dataset.fs, s
 percent.mito <- Matrix::colSums(GetAssayData(dataset.fs, slot = "counts")[mito.genes, ])/Matrix::colSums(GetAssayData(dataset.fs, slot = "counts"))
 dataset.fs <- AddMetaData(object = dataset.fs, metadata = percent.mito, col.name = "percent.mito")
 
+dataset.fs@meta.data
 dataset.fs <- subset(dataset.fs, subset = nCount_RNA > 0 & percent.mito < 0.05)
+dataset.fs
 #23356  1088 
 
 
@@ -278,11 +221,6 @@ dataset.fs <- subset(dataset.fs, subset = nCount_RNA > 0 & percent.mito < 0.05)
 
 ```{r}
 
-# FYI , how metadata are obtained 
-# 1st line in metada
-# cell1=dataset.fs@assays$RNA$counts[,1]
-# sum(cell1) # dataset.fs$nCount_RNA
-# length(cell1[cell1>0]) # dataset.fs$nFeature_RNA
 
 #QC plots
 sums <- data.frame(nCountRNA=dataset.fs$nCount_RNA)
@@ -296,10 +234,13 @@ p2=ggplot(sums, aes(x=nb_transcript)) + geom_histogram(binwidth=100)+
 p2
 
 
+
 # violin plots , features
 
-VlnPlot(object = dataset.fs, features=c("nFeature_RNA", "percent.mito"),slot = "counts",idents=c("t35-WNT", "t35-BMP","t36-WNT", "t36-BMP","t37-WNT", "t37-BMP"))
-VlnPlot(object = dataset.fs, features=c("nCount_RNA", "percent.mito"),slot = "counts",idents=c("t35-WNT", "t35-BMP","t36-WNT", "t36-BMP","t37-WNT", "t37-BMP"))
+VlnPlot(object = dataset.fs, features=c("nCount_RNA","nFeature_RNA","percent.mito"),slot = "counts",idents=c("t35-WNT", "t35-BMP","t36-WNT", "t36-BMP","t37-WNT", "t37-BMP"))
+VlnPlot(object = dataset.fs, features=c("nCount_RNA","nFeature_RNA","percent.mito"),slot = "counts", group.by = "time")
+
+#VlnPlot(object = dataset.fs, features=c("nCount_RNA","nFeature_RNA","percent.mito"),slot = #"counts",idents=c("t35-WNT", "t35-BMP","t36-WNT", "t36-BMP","t37-WNT", "t37-BMP"))
 
 # scatter plots 
 
@@ -310,6 +251,8 @@ FeatureScatter(object = dataset.fs, feature1 = "nCount_RNA", feature2 = "GAPDH",
                slot = "counts")
 
 ```
+
+# ---
 
 -   t36 and t37 are from the same plate .
 
@@ -333,6 +276,8 @@ dataset.fs <- ScaleData(object = dataset.fs, features = row.names(dataset.fs[['R
 ```
 
 ```{r}
+library(ggpubr)
+
 ## scale with nCount vs  scale withGapdh
 for (gene in c("T","EOMES","POU5F1")) {
   data_x <- dataset.fs@assays$RNA$data[gene,]
@@ -350,8 +295,6 @@ for (gene in c("T","EOMES","POU5F1")) {
 }
 
 ```
-
-> How to interpret this ?
 
 ```{r}
 dataset.fs <- FindVariableFeatures(dataset.fs, selection.method = "vst", nfeatures = 2000)
@@ -371,6 +314,7 @@ By default, only the previously determined variable features are used as input, 
 # Perform linear dimensional reduction
 dataset.fs <- RunPCA(dataset.fs, npcs = 30, verbose = FALSE)
 PCAPlot(dataset.fs)
+PCAPlot(dataset.fs, group.by="condition")
 # Examine and visualize PCA results 
 # For the first principal components, Seurat outputs a list of genes with the most positive and negative loadings, representing modules of genes that exhibit either correlation (or anti-correlation) across single-cells in the dataset.
 print(dataset.fs[["pca"]], dims = 1:3, nfeatures = 3)
@@ -380,7 +324,7 @@ print(dataset.fs[["pca"]], dims = 1:3, nfeatures = 3)
 as.data.frame(dataset.fs@reductions$pca@feature.loadings)
 # embedding are the projections in lower dimensions 
 as.data.frame(dataset.fs@reductions$pca@cell.embeddings)
-#Embeddings(object =dataset.fs[["pca"]])[1:5, 1:5]
+
 
 ```
 
@@ -423,14 +367,14 @@ ElbowPlot(dataset.fs)
     :   Which dimensional reduction (PCA or ICA) to use for the UMAP input. Default is PCA
 
 ```{r}
-nb_pc <- 10
+nb_pc <- 15
 k <- 10
 dataset.fs <- RunUMAP(dataset.fs, reduction = "pca", dims = 1:nb_pc,n.neighbors = k,
                        n.components=2)
-DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "condition")+
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2),
-        plot.title = element_blank())
+
+DimPlot(dataset.fs, reduction = "umap",dims=c(1,2))
+DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "time")
+DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "condition")
 ```
 
 ### Find neighbors and cluster .
@@ -444,7 +388,7 @@ DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "condition")+
 ```{r}
 ## Cluster the cells
 resolution = 0.1
-k <- 10 # ??
+k <- 10 # 
 dataset.fs <- FindNeighbors(dataset.fs, reduction= "pca", dims = 1:nb_pc, k.param=k)
 dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = resolution)
 DimPlot(dataset.fs, reduction = "umap",label=TRUE)+
@@ -460,32 +404,24 @@ for (res in c(1:10)/10){
   dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = res)
 }
 size=10
-clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
-  theme(legend.key.size = unit(size/12.5, 'cm'),
-        legend.text = element_text(size=size*2.5),
-        legend.title = element_text(size=size*3))
+
+#clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
+#  theme(legend.key.size = unit(size/12.5, 'cm'),
+#        legend.text = element_text(size=size*2.5),
+#        legend.title = element_text(size=size*3))
 
 # features plots 
 
-FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)+
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
+FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)
 
-FeaturePlot(dataset.fs,c("nCount_RNA"),order = TRUE,split.by = "condition" ) +
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
+FeaturePlot(dataset.fs,c("nCount_RNA"),order = TRUE,split.by = "condition" ) 
 
-FeaturePlot(dataset.fs,c("ID1"),order = TRUE,split.by = "condition" ) +
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
+FeaturePlot(dataset.fs,c("ID1"),order = TRUE,split.by = "condition" )
 
-FeaturePlot(dataset.fs,c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) +
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
+FeaturePlot(dataset.fs,c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
 
-FeaturePlot(subset(dataset.fs,subset= condition %in% c("BMP","WNT")),c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) +
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
+FeaturePlot(subset(dataset.fs,subset= condition %in% c("BMP","WNT")),c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
+
 
 VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
 
@@ -497,28 +433,29 @@ VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
 
 # All resolutions 
 DimPlot(dataset.fs,group.by = "condition")
+DimPlot(dataset.fs,group.by = "time")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.1")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.2")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.3")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.4")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.5")
-VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.3")
+
+FeaturePlot(dataset.fs,c("percent.mito","nFeature_RNA"))
+VlnPlot(dataset.fs,c("nCount_RNA","nFeature_RNA"),group.by = "RNA_snn_res.0.1") # cluster 4 is probably trash 
+
 ```
 
 ## Remove trash cells
 
 ```{r}
-# remove cluster 3 because it has low RNA count 
+# remove cluster 4 because it has low RNA count 
 # these corresponds to trash datapoints (MM468,NEG,low rna)
-as.data.frame(dataset.fs$RNA_snn_res.0.1[dataset.fs$RNA_snn_res.0.1==3])
-# Filter out the cells
-dataset.filtered.fs <- subset(dataset.fs, subset = RNA_snn_res.0.1 != 3)
-dataset.fs
-dataset.filtered.fs
 
-table(dataset.fs$RNA_snn_res.0.1)
-table(dataset.fs$RNA_snn_res.0.3)
-table(dataset.filtered.fs$RNA_snn_res.0.1)
+# Filter out the cells
+dataset.filtered.fs <- subset(dataset.fs, subset = RNA_snn_res.0.1 != 4)
+dataset.filtered.fs
+rm(dataset.fs)
+
 
 ```
 
@@ -531,7 +468,12 @@ dataset.filtered.fs <- FindVariableFeatures(dataset.filtered.fs, selection.metho
 sort(dataset.filtered.fs@assays$RNA@features)
 # Perform linear dimensional reduction
 dataset.filtered.fs <- RunPCA(dataset.filtered.fs, npcs = 30, verbose = FALSE)
-PCAPlot(dataset.filtered.fs)
+PCAPlot(dataset.filtered.fs,group.by="condition")
+
+# Dimloadings 
+VizDimLoadings(dataset.filtered.fs, dims = 1:2, reduction = "pca")
+
+
 ## Run UMAP
 nb_pc <- 10
 k <- 10
@@ -558,23 +500,22 @@ DimPlot(dataset.filtered.fs, reduction = "umap",dims=c(1,2),group.by = "conditio
 
 ```{r}
 
-gene <- "LEFTY2"
-FeaturePlot(dataset.filtered.fs,gene,order = TRUE,label=TRUE)
-VlnPlot(dataset.filtered.fs,gene)
-VlnPlot(dataset.filtered.fs,gene,group.by = "condition") # resolution is 0.5
-
-
-current.cluster.ids <- c(0:9)
-new.cluster.ids <- c("PGC","NasMes3","aPS-DE","NasMes1","Epi","PS1","PS2",
-                     "ExeMes","NasMes2","AxMes")
-new.cluster.ids.order <- c("Epi","PS1","PS2","aPS-DE","AxMes",
-                           "NasMes1","NasMes2","NasMes3","ExeMes","PGC")
-
-dataset.filtered.fs@active.ident <- plyr::mapvalues(x = dataset.filtered.fs@active.ident, from = current.cluster.ids, to = new.cluster.ids)
-dataset.filtered.fs@active.ident  <- factor(dataset.filtered.fs@active.ident , levels = new.cluster.ids.order)
-dataset.filtered.fs$celltype <- dataset.filtered.fs@active.ident
-
-DimPlot(dataset.filtered.fs,label = TRUE, reduction = "umap",dims=c(1,2))
+# gene <- "LEFTY2"
+# FeaturePlot(dataset.filtered.fs,gene,order = TRUE,label=TRUE)
+# VlnPlot(dataset.filtered.fs,gene,group.by = "condition") 
+# 
+# 
+# current.cluster.ids <- c(0:9)
+# new.cluster.ids <- c("PGC","NasMes3","aPS-DE","NasMes1","Epi","PS1","PS2",
+#                      "ExeMes","NasMes2","AxMes")
+# new.cluster.ids.order <- c("Epi","PS1","PS2","aPS-DE","AxMes",
+#                            "NasMes1","NasMes2","NasMes3","ExeMes","PGC")
+# 
+# dataset.filtered.fs@active.ident <- plyr::mapvalues(x = dataset.filtered.fs@active.ident, from = current.cluster.ids, to = new.cluster.ids)
+# dataset.filtered.fs@active.ident  <- factor(dataset.filtered.fs@active.ident , levels = new.cluster.ids.order)
+# dataset.filtered.fs$celltype <- dataset.filtered.fs@active.ident
+# 
+# DimPlot(dataset.filtered.fs,label = TRUE, reduction = "umap",dims=c(1,2))
 
 ```
 
@@ -582,7 +523,7 @@ DimPlot(dataset.filtered.fs,label = TRUE, reduction = "umap",dims=c(1,2))
 
 ```{r}
 dataset.filtered.fs
-saveRDS(dataset.filtered.fs, file = paste(OUTDIR,"dataset.filtered.fsf",sep ="/"))
+saveRDS(dataset.filtered.fs, file = paste(OUTDIR,"dataset.filtered.rds",sep ="/"))
 ```
 
 # ---
@@ -593,20 +534,11 @@ Dump the necessary files for Miic
 
 ```{r}
 
-# transcript estimation methods = divide with length 
 # Load the datasets - using Gael seurat object .
-dataset.fs <- readRDS(file ="../data/2dgas-fs/rds/2dgas_t36_fs.rds") # from GAEL
-data.raw.read <- read.table(file="../output/RawReadMatrix.txt")
+dataset.fs <- readRDS(file =file.path(OUTDIR,"dataset.filtered.rds")) 
+data.raw.read <- read.table(file=file.path(OUTDIR,"RawReadMatrix.txt"))
 cells.use <- substring(Cells(dataset.fs), first = regexpr("_",Cells(dataset.fs))+1)
-dataset.fs
-```
-
-```{r}
-
-# Plot the expression of one gene
-gene="FOXC2"
-FeaturePlot(dataset.fs,gene,order = TRUE,label=TRUE,split.by = "condition")
-VlnPlot(dataset.fs,gene,group.by = "condition")
+dataset.fs@meta.data
 ```
 
 # Selecting Genes :
@@ -675,147 +607,4 @@ list.gene.use.3 <- sort(union(list.gene.use.2,VariableFeatures(dataset.fs)))
 list.tf.3 <- sort(union(list.gene.use.2, intersect(list.gene.use.3,gene.list.tf)))
 print("list.gene.use.3 :") ; length(list.gene.use.3)
 
-```
-
-# Save MIIC input file 1 :
-
-Time : Seurat object that was used to extract the top 50 marker genes
-
-Only the cells that are in the Seurat object are kept in the final matrix . Some cells were filtered because of low quality , Mito dna ...
-
-Number of selected genes : 215
-
-Dataset : raw counts
-
-```{r}
-
-
-# both conditions 
-filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_matrix.csv",sep ="/")
-matrix.use.2 <- as.data.frame(t(data.raw.read[list.gene.use.2,cells.use]))
-matrix.use.2$condition <- as.numeric(factor(dataset.fs@meta.data$condition))
-write.csv(matrix.use.2,filename,row.names = FALSE)
-
-category.order.use <- data.frame(var_names=colnames(matrix.use.2),
-                                 var_type = c(rep(1,ncol(matrix.use.2)-1),0),
-                                 levels_increasing_order = rep(NA,ncol(matrix.use.2)),
-                                 is_contextual = c(rep(0,ncol(matrix.use.2)-1),1))
-filename <- paste(OUTDIR,"2Dgas-t36-fs_216_category_all_with-contextual.txt",sep ="/") 
-write.table(category.order.use,filename,row.names = FALSE)
-
-
-#----------- WNT only
-filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_matrix_WNT.csv",sep ="/")
-matrix.WNT <- matrix.use.2[dataset.fs$condition == "WNT",]
-variables.to.change <- names(which(apply(matrix.WNT, 2, function(x) length(unique(x)))<3))
-print("low variablity columns ");variables.to.change
-
-matrix.WNT[,variables.to.change] <- 0 # this removes columns that don't change too much 
-write.csv(matrix.WNT ,filename,row.names = FALSE)
-
-category.order.use <- data.frame(var_names=colnames(matrix.WNT),
-                                 var_type = c(rep(1,ncol(matrix.WNT)-1),0),
-                                 levels_increasing_order = rep(NA,ncol(matrix.WNT)))
-category.order.use[category.order.use$var_names %in% variables.to.change,]$var_type <- 0
-filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_category_WNT.txt",sep ="/") 
-write.table(category.order.use,filename,row.names = FALSE)
-
-
-#----------- BMP only
-filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_matrix_BMP.csv",sep ="/") 
-matrix.BMP <- matrix.use.2[dataset.fs$condition == "BMP",]
-variables.to.change <- names(which(apply(matrix.BMP, 2, function(x) length(unique(x)))<3))
-print("low variablity columns "); variables.to.change
-
-matrix.BMP[,variables.to.change] <- 0 # this removes columns that don't change too much 
-write.csv(matrix.BMP ,filename,row.names = FALSE)
-
-category.order.use <- data.frame(var_names=colnames(matrix.BMP),
-                                 var_type = c(rep(1,ncol(matrix.BMP)-1),0),
-                                 levels_increasing_order = rep(NA,ncol(matrix.BMP)))
-category.order.use[category.order.use$var_names %in% variables.to.change,]$var_type <- 0
-filename <- paste(OUTDIR,"2Dgas-t36-fs-TFs_category_BMP.txt",sep ="/") 
-write.table(category.order.use,filename,row.names = FALSE)
-```
-
-# Results & discussions
-
-1.  Compare both <https://miic.curie.fr/job_results_comparison.php?id=Y7zM0NGbFXRTCCpIkS3c>
-
-    -   POU5F1 and JUND seem to play a major role as they form two important hubs in both conditions .
-
-2.  WNT stimulation <https://miic.curie.fr/job_results.php?id=3jqBQsZj0ozYbQD1kHsN>
-
-    -   SALL3 is a conditional link of WNT3A, Mutations in this gene are associated with congenital disorders in human, suggesting their importance in embryonic development <https://www.ncbi.nlm.nih.gov/gene/27164> .
-
-        -   it's also associated with BMP4 .
-
-    -   WNT NUMBER OF CONNECTION ????????
-
-3.  BMP stimulation <https://miic.curie.fr/job_results.php?id=CuBqWU088wjvspTkQH1S>
-
-    -   In BMP stimulated environment, BMP4 has more connections / conditioned links (53 versus ???????)
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-# ---
-
-# Compare my SO with Gael's object
-
-```{r}
-# Load the datasets
-dataset.GAEL.fs <- readRDS(file ="../data/2dgas-fs/rds/2dgas_t36_fs.rds") # from GAEL
-data.raw.read <- read.table(file="../output/RawReadMatrix.txt")
-cells.use <- substring(Cells(dataset.fs), first = regexpr("_",Cells(dataset.fs))+1)
-dataset.GAEL.fs
-dataset.filtered.fs
-```
-
-```{r}
-
-v1.gael=Cells(dataset.GAEL.fs)
-v2.ali=Cells(dataset.filtered.fs)
-all=Cells(dataset.fs)
-
-# Intersection (elements common to both vectors)
-intersection <- intersect(all, v2.ali)
-
-# Elements specific to vector1 (present in vector1 but not in vector2)
-specific_to_vector1 <- setdiff(all, v2.ali)
-
-# Elements specific to vector2 (present in vector2 but not in vector1)
-specific_to_vector2 <- setdiff(v2.ali, all)
-
-# Elements that Gael filtered in his SO and I did not .
-specific_to_vector3 <- setdiff(v2.ali, v1.gael)
-specific_to_vector3
-
-# Elements that I filtered and Gael did not .
-specific_to_vector4 <- setdiff(v1.gael,v2.ali)
-specific_to_vector4
-
-```
-
-```{r}
-length(all)
-length(intersection)
-specific_to_vector1
-
-
-
-
-VlnPlot(subset(x = dataset.fs,cells = specific_to_vector1,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
-
-# VlnPlot(subset(x = dataset.fs,cells = specific_to_vector3,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
-# 
-# VlnPlot(subset(x = dataset.fs,cells = specific_to_vector4,subset= (condition %in% c("BMP","WNT")) ),features = c("nCount_RNA"),group.by = "condition")
-# 
-# VlnPlot(dataset.fs,features = c("nCount_RNA"),group.by = "condition")
 ```
