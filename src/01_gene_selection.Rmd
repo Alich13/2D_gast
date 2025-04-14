@@ -199,44 +199,33 @@ metadata_cols <- names(metadata)
 
 # FILTER
 dataset.so_BMP <- Filter_seurat_object(dataset.so,filters_BMP)
-BMP_matrix<-dataset.so_BMP@assays$RNA$counts[selection_pool,]
-BMP_matrix<-cbind(t(BMP_matrix), dataset.so_BMP@meta.data[metadata_cols])
 
 if (ENABLE_MI_SELECTION) {
 
-  mi_scores_BMP<-miic::selectFeatures(
-    BMP_matrix,
-    n_features=NULL,
-    var_of_interest_names=c(my_genes_literature,metadata_cols),
-    n_threads=6, verbose=3, plot=F)
-
-  matrix_melt<-reshape2::melt(mi_scores_BMP$mis) 
-  names(matrix_melt) <-  c("variables","foi","value")
-  # save selection as tsv
-  write.table(matrix_melt,
-              file=file.path(run_outdir_BMP,"SELECT_MI_table.csv"),sep="\t",quote = F,row.names = F)
-
+ mi_left_cell<-wrap_MI_compute(
+    dataset =dataset.so_BMP,
+    subset_vars= selection_pool,
+    var_of_interest=c(my_genes_literature,metadata_cols),
+    threads=6,
+    run_outdir = run_outdir_BMP,
+    name="BMP_"
+  )
 }
-
 
 # FILTER
 dataset.so_WNT <- Filter_seurat_object(dataset.so,filters_WNT) 
-WNT_matrix<- dataset.so_WNT@assays$RNA$counts[selection_pool,]
-WNT_matrix<-cbind(t(WNT_matrix), dataset.so_WNT@meta.data[metadata_cols])
+
 
 if (ENABLE_MI_SELECTION) {
 
-  mi_scores_WNT<-miic::selectFeatures(
-    WNT_matrix,
-    n_features=NULL,
-    var_of_interest_names=c(my_genes_literature,metadata_cols),
-    n_threads=6, verbose=3, plot=F)
-
-  matrix_melt<-reshape2::melt(mi_scores_WNT$mis) 
-  names(matrix_melt) <-  c("variables","foi","value")
-  # save selection as tsv
-  write.table(matrix_melt,
-              file=file.path(run_outdir_WNT,"SELECT_MI_table.csv"),sep="\t",quote = F,row.names = F)
+  mi_left_cell<-wrap_MI_compute(
+    dataset =dataset.so_WNT,
+    subset_vars= selection_pool,
+    var_of_interest=c(my_genes_literature,metadata_cols),
+    threads=6,
+    run_outdir = run_outdir_WNT,
+    name="WNT_"
+  )
 
 }
 
@@ -248,7 +237,7 @@ if (ENABLE_MI_SELECTION) {
 # Run MI smart selection - run_outdir_BMP
 ```{r}
 
-MI_selection=read.csv(file=file.path(run_outdir_BMP,"SELECT_MI_table.csv"),sep="\t")
+MI_selection=read.csv(file=file.path(run_outdir_BMP,"BMP__MI_table.csv"),sep="\t")
 
 
 group_size<-5
@@ -304,12 +293,15 @@ cat("============ Genereting MIIC input files ================ :\n")
      contextual=contextual
  )
 
+
+
+
 ```
 
 # Run MI smart selection - run_outdir_WNT
 
 ```{r}
-MI_selection=read.csv(file=file.path(run_outdir_WNT,"SELECT_MI_table.csv"),sep="\t")
+MI_selection=read.csv(file=file.path(run_outdir_WNT,"WNT__MI_table.csv"),sep="\t")
 
 
 group_size<-5
