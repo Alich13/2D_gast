@@ -125,7 +125,7 @@ myfoi_shortlist<-c(
 # Add metadata for MI selection 
 # These need to be added else we won't find association with our variables of interest
 metadata<- list(
-  time=NULL,
+  time=c("t35,t36,t37"),
   mtMean=NULL,
   rplMean=NULL,
   rpsMean=NULL
@@ -193,6 +193,13 @@ if (!dir.exists(run_outdir_WNT)) {
 source("../miic_helper/src/preprocess_sureat_object.R") # helper functions to preprocess miic inputs 
 
 dataset.so     <- readRDS(file =dataset.path)
+
+# get mito genes
+mtgenes <- grep("^MT-", rownames(dataset.so), value = TRUE)
+# get ribosomal genes
+rplgenes <- grep("^RPL", rownames(dataset.so), value = TRUE)
+rpsgenes <- grep("^RPS", rownames(dataset.so), value = TRUE)
+
 gene.list.tf   <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.so@assays$RNA$counts))) 
 selection_pool <- unique(c(my_genes_literature,gene.list.tf)) # TFs + genes from literature
 metadata_cols <- names(metadata)
@@ -273,11 +280,11 @@ MI_heatmap(selection,toupper(my_genes_literature ),"bmp selection ",outpath)
 # heatmap of the short list
 file_name<-paste("selection_shortlist_heatmap_bmp.png",sep = ".")
 outpath=file.path(run_outdir,file_name)
-selection_short <-MI_selection %>% filter(variables %in% selected.genes_short_list_df$variables & foi %in% c(myfoi_shortlist))
-MI_heatmap(selection_short,toupper(my_genes_literature),"bmp short list selection",outpath)
+selection_short_BMP <-MI_selection %>% filter(variables %in% selected.genes_short_list_df$variables & foi %in% c(myfoi_shortlist))
+MI_heatmap(selection_short_BMP,toupper(my_genes_literature),"bmp short list selection",outpath)
 
 
-network_selected_variables<-unique(selection_short$variables)
+network_selected_variables<-unique(selected.genes_short_list_df$variables)
 
 cat("============ Genereting MIIC input files ================ :\n")
 # Generate miic outputs 
@@ -293,13 +300,76 @@ cat("============ Genereting MIIC input files ================ :\n")
      contextual=contextual
  )
 
+```
+# TF miic BMP
+```{r}
+#  myfoi_shortlist (genes we know are intresting from literature ) + selected tfs + metadata
+BMP_TF_nework_genes <-unique(c(myfoi_shortlist,selected.genes_short_list_df$variables))
+#  select top mi GENES (not just tf) for each node 
+if (ENABLE_MI_SELECTION) {
 
+  mi_left_cell<-wrap_MI_compute(
+    dataset =dataset.so_BMP,
+    subset_vars= NULL,
+    var_of_interest=BMP_TF_nework_genes,
+    threads=8,
+    run_outdir = run_outdir,
+    name="BMP_second_"
+  )
+
+}
+
+#--------------------------------------------------------------
+#  SECOND SELECTION 
+# --------------------------------------------------------------
+# reselect the top genes for each node of the first network
+# In this second network, if a gene is not in the list of tfs, mark it as consequence (except for  metadata and the shortlist)
+
+
+MI_second_selection=read.csv(file=file.path(run_outdir,"BMP_second__MI_table.csv"),sep="\t")
+
+group_size<-5
+second_selection_BMP<-MI_second_selection %>%
+  group_by(foi) %>% 
+  filter(!variables %in% c(mtgenes,rplgenes,rpsgenes)) %>%
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size) 
+
+second_selection_genes<-unique(second_selection_BMP$variables)
+network_after_second_selection<-unique(c(BMP_TF_nework_genes,second_selection_genes))
+
+# defining groups 
+
+gene.list.tf   <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.so))) 
+
+mygroups <-list(
+  TFs=gene.list.tf,
+  foi=myfoi_shortlist
+)
+
+not_tf_not_foi<-row.names(dataset.so)[!row.names(dataset.so) %in% c(gene.list.tf,myfoi_shortlist,metadata_cols)]
+
+
+cat("============ Genereting MIIC input files ================ :\n")
+
+source("../miic_helper/src/preprocess_sureat_object.R") # helper functions to preprocess miic inputs 
+# Generate miic outputs 
+ Generate_miic_files(
+     dataset.so_BMP,
+     network_after_second_selection,
+     metadata,
+     c(myfoi_shortlist,metadata_cols),
+     run_outdir,
+     paste0(analysis_prefix,"_bmp_second"),
+     groups=mygroups,
+     assert_consequence= c(not_tf_not_foi),
+     contextual=contextual
+ )
 
 
 ```
 
 # Run MI smart selection - run_outdir_WNT
-
 ```{r}
 MI_selection=read.csv(file=file.path(run_outdir_WNT,"WNT__MI_table.csv"),sep="\t")
 
@@ -312,7 +382,7 @@ selected.genes_df<-MI_selection %>%
   slice_head(n = group_size) 
 
 group_size_short_list<-30
-selected.genes_short_list_df<-MI_selection %>%
+selected.genes_short_list_wnt_df<-MI_selection %>%
   filter(foi %in% myfoi_shortlist) %>% 
   group_by(foi) %>% 
   arrange(desc(value) , .by_group = TRUE) %>%
@@ -336,7 +406,7 @@ MI_heatmap(selection,toupper(my_genes_literature),"wnt selection",outpath)
 # heatmap of the short list
 file_name<-paste("selection_shortlist_heatmap_wnt.png",sep = ".")
 outpath=file.path(run_outdir,file_name)
-selection_short <-MI_selection %>% filter(variables %in% selected.genes_short_list_df$variables & foi %in% c(myfoi_shortlist))
+selection_short <-MI_selection %>% filter(variables %in% selected.genes_short_list_wnt_df$variables & foi %in% c(myfoi_shortlist))
 MI_heatmap(selection_short,toupper(my_genes_literature)," wnt short list selection",outpath)
 
 
@@ -356,6 +426,76 @@ cat("============ Genereting MIIC input files ================ :\n")
      contextual=contextual
  )
 ```
+
+
+# TF miic WNT
+```{r}
+#  myfoi_shortlist (genes we know are intresting from literature ) + selected tfs + metadata
+WNT_TF_nework_genes <-unique(c(myfoi_shortlist,selected.genes_short_list_wnt_df$variables))
+#  select top mi GENES (not just tf) for each node 
+if (ENABLE_MI_SELECTION) {
+
+  mi_left_cell<-wrap_MI_compute(
+    dataset =dataset.so_WNT,
+    subset_vars= NULL,
+    var_of_interest=WNT_TF_nework_genes,
+    threads=8,
+    run_outdir = run_outdir,
+    name="WNT_second_"
+  )
+
+}
+#--------------------------------------------------------------
+#  SECOND SELECTION 
+# --------------------------------------------------------------
+# reselect the top genes for each node of the first network
+# In this second network, if a gene is not in the list of tfs, mark it as consequence (except for  metadata and the shortlist)
+
+
+MI_second_selection=read.csv(file=file.path(run_outdir,"WNT_second__MI_table.csv"),sep="\t")
+
+group_size<-5
+second_selection_wnt<-MI_second_selection %>%
+  group_by(foi) %>% 
+  filter(!variables %in% c(mtgenes,rplgenes,rpsgenes)) %>%
+  arrange(desc(value) , .by_group = TRUE) %>%
+  slice_head(n = group_size) 
+
+second_selection_genes<-unique(second_selection_wnt$variables)
+network_after_second_selection<-unique(c(wnt_TF_nework_genes,second_selection_genes))
+
+# defining groups 
+
+gene.list.tf   <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.so))) 
+
+mygroups <-list(
+  TFs=gene.list.tf,
+  foi=myfoi_shortlist
+)
+
+not_tf_not_foi<-row.names(dataset.so)[!row.names(dataset.so) %in% c(gene.list.tf,myfoi_shortlist,metadata_cols)]
+
+
+cat("============ Genereting MIIC input files ================ :\n")
+
+source("../miic_helper/src/preprocess_sureat_object.R") # helper functions to preprocess miic inputs 
+# Generate miic outputs 
+ Generate_miic_files(
+     dataset.so_wnt,
+     network_after_second_selection,
+     metadata,
+     c(myfoi_shortlist,metadata_cols),
+     run_outdir,
+     paste0(analysis_prefix,"_wnt_second"),
+     groups=mygroups,
+     assert_consequence= c(not_tf_not_foi),
+     contextual=contextual
+ )
+
+
+
+```
+
 
 
 
