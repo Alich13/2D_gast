@@ -21,7 +21,7 @@ All upstream analysis steps before running MIIC
 # this is version used to generate all the results and intermidiate files.
 # please commit your changes after fixing the version and passing the results to MIIC 
 
-P_VERSION="v0.1" # using GAEL seurat object 
+P_VERSION="v0.2" # using GAEL seurat object 
 
 OUTDIR=paste("~/Desktop/myProjects/2D_gast/output",P_VERSION,sep="/")
 
@@ -210,14 +210,18 @@ percent.mito <- Matrix::colSums(GetAssayData(dataset.fs, slot = "counts")[mito.g
 dataset.fs <- AddMetaData(object = dataset.fs, metadata = percent.mito, col.name = "percent.mito")
 
 dataset.fs@meta.data
-dataset.fs <- subset(dataset.fs, subset = nCount_RNA > 0 & percent.mito < 0.05)
-dataset.fs
-#23356  1088 
+FeatureScatter(object = dataset.fs, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",slot = "counts")+geom_vline(xintercept = 250000, color = "red", size=1)
+
+
+# NOTE : filter 
+dataset.fs <- subset(dataset.fs, subset =  nFeature_RNA > 200 & nCount_RNA < 200000 & percent.mito < 0.05)
+
+
 
 
 ```
 
-## Plots after QC
+## Plots after FILTERING
 
 ```{r}
 
@@ -372,7 +376,7 @@ k <- 10
 dataset.fs <- RunUMAP(dataset.fs, reduction = "pca", dims = 1:nb_pc,n.neighbors = k,
                        n.components=2)
 
-DimPlot(dataset.fs, reduction = "umap",dims=c(1,2))
+DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "orig.ident")
 DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "time")
 DimPlot(dataset.fs, reduction = "umap",dims=c(1,2),group.by = "condition")
 ```
@@ -391,39 +395,8 @@ resolution = 0.1
 k <- 10 # 
 dataset.fs <- FindNeighbors(dataset.fs, reduction= "pca", dims = 1:nb_pc, k.param=k)
 dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = resolution)
-DimPlot(dataset.fs, reduction = "umap",label=TRUE)+
-  theme(axis.text = element_text(size=size*2),
-        axis.title = element_text(size=size*2))
 
-# -----
-
-library(clustree)
-
-## Clusters stability 
-for (res in c(1:10)/10){
-  dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = res)
-}
-size=10
-
-#clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
-#  theme(legend.key.size = unit(size/12.5, 'cm'),
-#        legend.text = element_text(size=size*2.5),
-#        legend.title = element_text(size=size*3))
-
-# features plots 
-
-FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)
-
-FeaturePlot(dataset.fs,c("nCount_RNA"),order = TRUE,split.by = "condition" ) 
-
-FeaturePlot(dataset.fs,c("ID1"),order = TRUE,split.by = "condition" )
-
-FeaturePlot(dataset.fs,c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
-
-FeaturePlot(subset(dataset.fs,subset= condition %in% c("BMP","WNT")),c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
-
-
-VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
+DimPlot(dataset.fs, reduction = "umap",label=TRUE)
 
 ```
 
@@ -431,68 +404,46 @@ VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
 
 ```{r}
 
+
+library(clustree)
+
+## Clusters stability 
+for (res in c(1:10)/10){
+  dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = res)
+}
+
+size=10
+clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
+ theme(legend.key.size = unit(size/12.5, 'cm'),
+       legend.text = element_text(size=size*2.5),
+       legend.title = element_text(size=size*3))
+
+
 # All resolutions 
-DimPlot(dataset.fs,group.by = "condition")
-DimPlot(dataset.fs,group.by = "time")
+
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.1")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.2")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.3")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.4")
 DimPlot(dataset.fs,group.by = "RNA_snn_res.0.5")
+DimPlot(dataset.fs,group.by = "condition")
+DimPlot(dataset.fs,group.by = "time")
 
+
+
+```
+
+# Feature plots 
+
+```{FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)}
+FeaturePlot(dataset.fs,c("nCount_RNA"),order = TRUE,split.by = "condition" ) 
+FeaturePlot(dataset.fs,c("ID1"),order = TRUE,split.by = "condition" )
+FeaturePlot(dataset.fs,c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
 FeaturePlot(dataset.fs,c("percent.mito","nFeature_RNA"))
+
+
+VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
 VlnPlot(dataset.fs,c("nCount_RNA","nFeature_RNA"),group.by = "RNA_snn_res.0.1") # cluster 4 is probably trash 
-
-```
-
-## Remove trash cells
-
-```{r}
-# remove cluster 4 because it has low RNA count 
-# these corresponds to trash datapoints (MM468,NEG,low rna)
-
-# Filter out the cells
-dataset.filtered.fs <- subset(dataset.fs, subset = RNA_snn_res.0.1 != 4)
-dataset.filtered.fs
-rm(dataset.fs)
-
-
-```
-
-## Re-run PCA-UMP : after filtering
-
-```{r}
-# Detection of variable genes across the single cells (the main parameter is y.cutoff, the higher the more
-# strict is the selection, the default value is 1)
-dataset.filtered.fs <- FindVariableFeatures(dataset.filtered.fs, selection.method = "vst", nfeatures = 2000)
-sort(dataset.filtered.fs@assays$RNA@features)
-# Perform linear dimensional reduction
-dataset.filtered.fs <- RunPCA(dataset.filtered.fs, npcs = 30, verbose = FALSE)
-PCAPlot(dataset.filtered.fs,group.by="condition")
-
-# Dimloadings 
-VizDimLoadings(dataset.filtered.fs, dims = 1:2, reduction = "pca")
-
-
-## Run UMAP
-nb_pc <- 10
-k <- 10
-dataset.filtered.fs <- RunUMAP(dataset.filtered.fs, reduction = "pca", dims = 1:nb_pc,n.neighbors = k,n.components=2)
-dataset.filtered.fs@reductions$umap@cell.embeddings[,1] = -dataset.filtered.fs@reductions$umap@cell.embeddings[,1]
-dataset.filtered.fs@reductions$umap@cell.embeddings[,2] = -dataset.filtered.fs@reductions$umap@cell.embeddings[,2]
-
-# Cluster stability analysis
-for (res in c(1:10)/10){
-  dataset.filtered.fs <- FindClusters(object = dataset.filtered.fs, reduction= "pca", resolution = res)
-}
-# ----
-resolution = 0.5
-k <- 10
-dataset.filtered.fs <- FindNeighbors(dataset.filtered.fs, reduction= "pca", dims = 1:nb_pc, k.param=k)
-dataset.filtered.fs <- FindClusters(object = dataset.filtered.fs, reduction= "pca", resolution = resolution)
-
-DimPlot(dataset.filtered.fs, reduction = "umap",dims=c(1,2),group.by = "condition")
-
 
 ```
 
@@ -562,85 +513,4 @@ dataset.filtered.fs
 saveRDS(dataset.filtered.fs, file = paste(OUTDIR,"dataset.filtered.rds",sep ="/"))
 ```
 
-# ---
-
-# Generate MIIC inputs
-
-Dump the necessary files for Miic
-
-```{r}
-
-# Load the datasets - using Gael seurat object .
-dataset.fs <- readRDS(file =file.path(OUTDIR,"dataset.filtered.rds")) 
-data.raw.read <- read.table(file=file.path(OUTDIR,"RawReadMatrix.txt"))
-cells.use <- substring(Cells(dataset.fs), first = regexpr("_",Cells(dataset.fs))+1)
-dataset.fs@meta.data
-```
-
-# Selecting Genes :
-
-```{r}
-
-#Arbitrary list of TF
-list.gene.use.1 <- sort(c("NANOG","NKX1-2","OTX2","POU3F1","POU5F1","SOX2","UTF1",
-                   "EOMES","MIXL1","T","SP5",
-                   "FOXA1","FOXA2","GSC","HHEX","LHX1","SOX17","SOX21",
-                   "FOXJ1","MAK","NOTO",
-                   "FOXC1","FOXC2","MEIS2","SNAI1","TBX6","TWIST1",
-                   "GATA4","GATA6","MESP1","MESP2","MSX1",
-                   "FOXF1","HOXB1","ISL1","PITX2","PRDM6","TBX3",
-                   "ETV2","GATA2","GATA3","HAND1","LMO2","MSX2","SMAD1","TBX20",
-                   "CDX2","CITED1","NMI","PARP9","PRDM1","PRDM14","SMAD6","SMAD7",
-                   "BMP4","ID1","ID2","ID3",
-                   "AXIN2","LEF1","WNT3",
-                   "LEFTY1","LEFTY2","NODAL","TDGF1"))
-print("list.gene.use.1 :"); length(list.gene.use.1)
-
-# Import GO data
-library(org.Mm.eg.db)
-x <- org.Mm.eg.db
-goall <- data.frame(AnnotationDbi::select(x, keys(x), "GOALL"))
-symbol <- AnnotationDbi::select(x, keys(x), "SYMBOL")
-
-#  keys(x) is fetching all of the available gene identifiers in the database.
-#  transcription regulator activity : GO:0140110
-#  canonical Wnt signaling pathway : GO:0060070,
-#  BMP signaling pathway : GO:0030509,
-#  activin receptor signaling pathway : GO:0032924,
-#  transforming growth factor beta receptor binding : GO:0005160
-#  fibroblast growth factor receptor signaling pathway : GO:0008543
-#  vascular endothelial growth factor signaling pathway : GO:0038084
-#  retinoic acid receptor signaling pathway : GO:0048384
-#  smoothened signaling pathway : GO:0007224
-#  Notch signaling pathway : GO:0007219
-
-#  extra-cellular region : GO:0005576
-
-# Heatmap of top TF
-GO.tf <- "GO:0140110" #  transcription regulator activity : GO:0140110
-entrezid <- unique(na.omit(goall[goall$GOALL==GO.tf,])$ENTREZID)
-GO.genes.tf <- symbol[symbol$ENTREZID %in% entrezid,]$SYMBOL
-gene.list.tf <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.fs@assays$RNA$counts))) 
-
-# get all marker TR in our Seurat object
-markers.all.tf <- FindAllMarkers(dataset.fs,only.pos = TRUE,features = gene.list.tf, min.diff.pct = 0.2)
-print("markers.all.tf (before filter) :") ; dim(markers.all.tf)
-
-# Export data
-markers.all.tf <- markers.all.tf[markers.all.tf$p_val_adj<0.01,]
-print("markers.all.tf :"); dim(markers.all.tf)
-
-top.tf<- markers.all.tf %>% group_by(cluster) %>% top_n(n = 50, wt = avg_log2FC) # takes top 50 in each cluster
-other.tf <- c("ID3","LEF1","POU5F1","PRDM1","PRDM14","T","FOXH1",
-              "SMAD1","SMAD2","SMAD3","SMAD4","SMAD5","SMAD6","SMAD7",
-              "AXIN2","BMP4","FGF5","FGF8","LEFTY1","LEFTY2","NODAL","TDGF1","TGFB1","WNT3")
-# 215 TF
-list.gene.use.2 <- sort(union(unique(top.tf$gene),other.tf))
-print("list.gene.use.2 :") ; length(list.gene.use.2)
-
-
-list.gene.use.3 <- sort(union(list.gene.use.2,VariableFeatures(dataset.fs)))
-list.tf.3 <- sort(union(list.gene.use.2, intersect(list.gene.use.3,gene.list.tf)))
-print("list.gene.use.3 :") ; length(list.gene.use.3)
-
-```
+# 
