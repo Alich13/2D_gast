@@ -102,9 +102,9 @@ GO.genes.tf <- symbol[symbol$ENTREZID %in% entrezid,]$SYMBOL
 -----------------------> **Update THIS !!** <--------------------------
 ```{r}
 # Analysis name
-name<-"2D_gast" 
+name<-"2D_gast_v0.2" 
 # seurat object
-dataset.path<-"output/v0.1/dataset.filtered.rds"
+dataset.path<-"output/v0.2/dataset.filtered.rds"
 # The variables of interest
 myfoi=my_genes_literature
 
@@ -126,6 +126,7 @@ myfoi_shortlist<-c(
 # These need to be added else we won't find association with our variables of interest
 metadata<- list(
   time=c("t36,t37"),
+  celltype=c(""), #c("aPS-DE,AxMes,Epi,ExeMes,NasMes1,NasMes2,NasMes3,PGC,PS1,PS2"),
   mtMean=NULL,
   rplMean=NULL,
   rpsMean=NULL
@@ -145,7 +146,7 @@ filters_WNT = list(
 
 
 # Directories 
-OUTDIR="output/v0.1"
+OUTDIR="output/v0.2"
 
 # State order 
 groups=list(
