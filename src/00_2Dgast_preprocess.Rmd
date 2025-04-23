@@ -125,7 +125,7 @@ write.table(data.fs.transcript,paste(OUTDIR,"TranscriptEstimationMatrix.txt",sep
 
 ```
 
-# UMI counts versus Reads counts 
+# UMI counts versus Reads counts
 
 ```{r}
 
@@ -168,7 +168,7 @@ p
 
 ```
 
-# Create transcript seurat object 
+# Create transcript seurat object
 
 ## Samples info
 
@@ -519,6 +519,42 @@ DimPlot(dataset.filtered.fs, reduction = "umap",dims=c(1,2),group.by = "conditio
 
 ```
 
+## Add mito and ribo averages
+
+```{r}
+
+pattern_genes <- rownames(dataset.filtered.fs)[grepl("^mt-", rownames(dataset.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+mean_expression <- colMeans(pattern_matrix)
+dataset.filtered.fs <- AddMetaData(
+  object = dataset.filtered.fs,
+  metadata = mean_expression, # Mean expression 
+  col.name = "mtMean" )
+
+
+pattern_genes <- rownames(dataset.filtered.fs)[grepl("^Rps", rownames(dataset.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+mean_expression <- colMeans(pattern_matrix)
+dataset.filtered.fs <- AddMetaData(
+  object = dataset.filtered.fs,
+  metadata = mean_expression, # Mean expression 
+  col.name = "rpsMean" )
+
+
+pattern_genes <- rownames(dataset.filtered.fs)[grepl("^Rpl", rownames(dataset.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+mean_expression <- colMeans(pattern_matrix)
+dataset.filtered.fs <- AddMetaData(
+  object = dataset.filtered.fs,
+  metadata = mean_expression, # Mean expression 
+  col.name = "rplMean" )
+
+
+
+
+
+```
+
 ## Save Seurat object
 
 ```{r}
@@ -581,10 +617,10 @@ symbol <- AnnotationDbi::select(x, keys(x), "SYMBOL")
 #  extra-cellular region : GO:0005576
 
 # Heatmap of top TF
-GO.tf <- "GO:0140110"
+GO.tf <- "GO:0140110" #  transcription regulator activity : GO:0140110
 entrezid <- unique(na.omit(goall[goall$GOALL==GO.tf,])$ENTREZID)
 GO.genes.tf <- symbol[symbol$ENTREZID %in% entrezid,]$SYMBOL
-gene.list.tf <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.fs[['RNA']]@counts))) 
+gene.list.tf <- sort(intersect(toupper(GO.genes.tf),row.names(dataset.fs@assays$RNA$counts))) 
 
 # get all marker TR in our Seurat object
 markers.all.tf <- FindAllMarkers(dataset.fs,only.pos = TRUE,features = gene.list.tf, min.diff.pct = 0.2)
