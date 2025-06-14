@@ -1,0 +1,25 @@
+
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+```
+
+
+
+```{r}
+
+gael_processed_rd_0<-"/Users/alichemkhi/Desktop/data/2dgas-fs/rds/2dgas_t36_fs_PreProcessing.rds"
+gael_processed_rd_2<-"/Users/alichemkhi/Desktop/data/2dgas-fs/rds/2dgas_t36_fs.rds"
+
+
+# load the processed data
+gael_processed <- readRDS(gael_processed_rd_2)
+
+Idents(gael_processed)
+
+gael_processed@meta.data
+
+```

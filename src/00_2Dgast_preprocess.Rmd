@@ -41,6 +41,7 @@ setwd("~/Desktop/myProjects/2D_gast")
 fs::link_create(path = "/Users/alichemkhi/Desktop/data", new_path = "data")# create symbolic link to data="/Users/alichemkhi/Desktop/data"
 fs::link_create(path = "/Users/alichemkhi/Desktop/myProjects/renv", new_path = "renv")# create symbolic link to data="/Users/alichemkhi/Desktop/data"
 
+
 ```
 
 ## Load raw data
@@ -209,7 +210,9 @@ mito.genes <- grep(pattern = "^MT-", x = rownames(x = GetAssayData(dataset.fs, s
 percent.mito <- Matrix::colSums(GetAssayData(dataset.fs, slot = "counts")[mito.genes, ])/Matrix::colSums(GetAssayData(dataset.fs, slot = "counts"))
 dataset.fs <- AddMetaData(object = dataset.fs, metadata = percent.mito, col.name = "percent.mito")
 
-dataset.fs@meta.data
+
+VlnPlot(object = dataset.fs, features=c("nCount_RNA","nFeature_RNA","percent.mito"),slot = "counts",idents=c("t35-WNT", "t35-BMP","t36-WNT", "t36-BMP","t37-WNT", "t37-BMP"))
+
 FeatureScatter(object = dataset.fs, feature1 = "nCount_RNA", feature2 = "nFeature_RNA",slot = "counts")+geom_vline(xintercept = 250000, color = "red", size=1)
 
 
@@ -412,20 +415,20 @@ for (res in c(1:10)/10){
   dataset.fs <- FindClusters(object = dataset.fs, reduction= "pca", resolution = res)
 }
 
-size=10
-clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
- theme(legend.key.size = unit(size/12.5, 'cm'),
-       legend.text = element_text(size=size*2.5),
-       legend.title = element_text(size=size*3))
+# size=10
+# clustree(dataset.fs, prefix = "RNA_snn_res.",node_text_size = size*0.25,edge_width = size*0.25)+
+#  theme(legend.key.size = unit(size/12.5, 'cm'),
+#        legend.text = element_text(size=size*2.5),
+#        legend.title = element_text(size=size*3))
 
 
 # All resolutions 
 
-DimPlot(dataset.fs,group.by = "RNA_snn_res.0.1")
-DimPlot(dataset.fs,group.by = "RNA_snn_res.0.2")
-DimPlot(dataset.fs,group.by = "RNA_snn_res.0.3")
-DimPlot(dataset.fs,group.by = "RNA_snn_res.0.4")
-DimPlot(dataset.fs,group.by = "RNA_snn_res.0.5")
+DimPlot(dataset.fs,group.by = "RNA_snn_res.0.1",label = TRUE)
+DimPlot(dataset.fs,group.by = "RNA_snn_res.0.4",label = TRUE)
+DimPlot(dataset.fs,group.by = "RNA_snn_res.0.5",label = TRUE)
+DimPlot(dataset.fs,group.by = "RNA_snn_res.0.8",label = TRUE)
+DimPlot(dataset.fs,group.by = "RNA_snn_res.1",label = TRUE)
 DimPlot(dataset.fs,group.by = "condition")
 DimPlot(dataset.fs,group.by = "time")
 
@@ -433,70 +436,97 @@ DimPlot(dataset.fs,group.by = "time")
 
 ```
 
-# Feature plots 
+# Feature plots
 
-```{FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)}
+```{r}
+Idents(dataset.fs)<-"RNA_snn_res.0.8"
+FeaturePlot(dataset.fs,c("ID1","WNT3","WNT3A","nCount_RNA"),order = TRUE)
 FeaturePlot(dataset.fs,c("nCount_RNA"),order = TRUE,split.by = "condition" ) 
 FeaturePlot(dataset.fs,c("ID1"),order = TRUE,split.by = "condition" )
 FeaturePlot(dataset.fs,c("WNT3","WNT3A"),order = TRUE,split.by = "condition" ) 
 FeaturePlot(dataset.fs,c("percent.mito","nFeature_RNA"))
 
 
-VlnPlot(dataset.fs,"nCount_RNA",group.by = "RNA_snn_res.0.1")
-VlnPlot(dataset.fs,c("nCount_RNA","nFeature_RNA"),group.by = "RNA_snn_res.0.1") # cluster 4 is probably trash 
+VlnPlot(dataset.fs,"nCount_RNA")
+VlnPlot(dataset.fs,c("nCount_RNA","nFeature_RNA")) 
+```
+
+# ANNOTATE-ASSIGN CELL TYPES
+
+use Gael annotation - available list
+
+```{r}
+library(tibble)
+# load the processed data from gael
+gael_processed_rd_2<-"/Users/alichemkhi/Desktop/data/2dgas-fs/rds/2dgas_t36_fs.rds"
+gael_processed <- readRDS(gael_processed_rd_2)
+
+
+gael_metadata <- gael_processed@meta.data["celltype"] %>%
+  rownames_to_column(var = "ident")
+dataset_meta <- dataset.fs@meta.data %>%
+  rownames_to_column(var = "ident")
+
+merged_df<-left_join(dataset_meta,gael_metadata,by="ident")
+merged_df$celltype<-as.character(merged_df$celltype)
+merged_df$celltype[is.na(merged_df$celltype)]<-"unknown"
+merged_df$celltype<-as.factor(merged_df$celltype)
+
+merged_df <- merged_df %>% column_to_rownames(var = "ident")
+dataset.fs.annotated <- dataset.fs
+
+dataset.fs.annotated@meta.data<-merged_df # overwrite metadata
+
+dim(dataset.fs.annotated@meta.data)
+dim(merged_df)
+
+
+
+DimPlot(dataset.fs.annotated,group.by = "RNA_snn_res.0.8",label = TRUE)
+DimPlot(dataset.fs.annotated,group.by = "celltype",label = TRUE)
+FeaturePlot(dataset.fs.annotated,"nCount_RNA")
+DimPlot(dataset.fs.annotated,group.by = "condition")
+DimPlot(dataset.fs.annotated,group.by = "time")
 
 ```
 
-## ANNOTATE-ASSIGN CELL TYPES
+# Remove cells - not annotated by Gael
 
 ```{r}
 
-# gene <- "LEFTY2"
-# FeaturePlot(dataset.filtered.fs,gene,order = TRUE,label=TRUE)
-# VlnPlot(dataset.filtered.fs,gene,group.by = "condition") 
-# 
-# 
-# current.cluster.ids <- c(0:9)
-# new.cluster.ids <- c("PGC","NasMes3","aPS-DE","NasMes1","Epi","PS1","PS2",
-#                      "ExeMes","NasMes2","AxMes")
-# new.cluster.ids.order <- c("Epi","PS1","PS2","aPS-DE","AxMes",
-#                            "NasMes1","NasMes2","NasMes3","ExeMes","PGC")
-# 
-# dataset.filtered.fs@active.ident <- plyr::mapvalues(x = dataset.filtered.fs@active.ident, from = current.cluster.ids, to = new.cluster.ids)
-# dataset.filtered.fs@active.ident  <- factor(dataset.filtered.fs@active.ident , levels = new.cluster.ids.order)
-# dataset.filtered.fs$celltype <- dataset.filtered.fs@active.ident
-# 
-# DimPlot(dataset.filtered.fs,label = TRUE, reduction = "umap",dims=c(1,2))
+# NOTE : the celltypes were collected from Gael object , unknown labels mean that the cell was not in gael's object. 
+# Also this group has very low gene count , see featureplot above 
 
+dataset.annotated.filtered.fs <- subset(dataset.fs.annotated, subset = celltype!="unknown"  )
 ```
 
 ## Add mito and ribo averages
 
 ```{r}
 
-pattern_genes <- rownames(dataset.filtered.fs)[grepl("^mt-", rownames(dataset.filtered.fs), ignore.case = TRUE)]
-pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+pattern_genes <- rownames(dataset.annotated.filtered.fs)[grepl("^mt-", rownames(dataset.annotated.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.annotated.filtered.fs, layer = "count")[pattern_genes,]
 mean_expression <- colMeans(pattern_matrix)
-dataset.filtered.fs <- AddMetaData(
-  object = dataset.filtered.fs,
+dataset.annotated.filtered.fs <- AddMetaData(
+  object = dataset.annotated.filtered.fs,
   metadata = mean_expression, # Mean expression 
   col.name = "mtMean" )
 
 
-pattern_genes <- rownames(dataset.filtered.fs)[grepl("^Rps", rownames(dataset.filtered.fs), ignore.case = TRUE)]
-pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+pattern_genes <- rownames(dataset.annotated.filtered.fs)[grepl("^Rps", rownames(dataset.annotated.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.annotated.filtered.fs, layer = "count")[pattern_genes,]
 mean_expression <- colMeans(pattern_matrix)
-dataset.filtered.fs <- AddMetaData(
-  object = dataset.filtered.fs,
+dataset.annotated.filtered.fs <- AddMetaData(
+  object = dataset.annotated.filtered.fs,
   metadata = mean_expression, # Mean expression 
   col.name = "rpsMean" )
 
 
-pattern_genes <- rownames(dataset.filtered.fs)[grepl("^Rpl", rownames(dataset.filtered.fs), ignore.case = TRUE)]
-pattern_matrix <- GetAssayData(dataset.filtered.fs, layer = "count")[pattern_genes,]
+pattern_genes <- rownames(dataset.annotated.filtered.fs)[grepl("^Rpl", rownames(dataset.annotated.filtered.fs), ignore.case = TRUE)]
+pattern_matrix <- GetAssayData(dataset.annotated.filtered.fs, layer = "count")[pattern_genes,]
 mean_expression <- colMeans(pattern_matrix)
-dataset.filtered.fs <- AddMetaData(
-  object = dataset.filtered.fs,
+dataset.annotated.filtered.fs <- AddMetaData(
+  object = dataset.annotated.filtered.fs,
   metadata = mean_expression, # Mean expression 
   col.name = "rplMean" )
 
@@ -509,8 +539,41 @@ dataset.filtered.fs <- AddMetaData(
 ## Save Seurat object
 
 ```{r}
-dataset.filtered.fs
-saveRDS(dataset.filtered.fs, file = paste(OUTDIR,"dataset.filtered.rds",sep ="/"))
+dataset.annotated.filtered.fs
+saveRDS(dataset.annotated.filtered.fs, file = paste(OUTDIR,"dataset.filtered.rds",sep ="/"))
+
+
+# Save the metadata as CSV
+write.csv(dataset.annotated.filtered.fs@meta.data, file = paste(OUTDIR, "metadata.csv", sep = "/"), row.names = FALSE)
+
+# Save the raw count matrix as CSV
+raw_counts<-dataset.annotated.filtered.fs@assays$RNA$counts
+write.csv(raw_counts, file = paste(OUTDIR, "raw_counts.csv", sep = "/"), row.names = TRUE)
+
 ```
 
-# 
+# Merge cell types 
+
+```{r}
+
+dataset.path<- file.path(OUTDIR,"dataset.filtered.rds")
+dataset.so     <- readRDS(file =dataset.path)
+
+
+dataset.so$celltype_grouped <- case_when(
+  dataset.so$celltype %in% c("NasMes1", "NasMes2", "NasMes3") ~ "NasMes",
+  dataset.so$celltype %in% c("aPS-DE","AxMes") ~ "aPS",
+  dataset.so$celltype %in% c("PS1", "PS2") ~ "PS",
+  dataset.so$celltype =="Epi" ~ "Epi",
+  dataset.so$celltype =="ExeMes" ~ "ExeMes",
+  dataset.so$celltype =="PGC" ~ "PGC",
+ 
+)
+
+table(dataset.so@meta.data$celltype)
+table(dataset.so@meta.data$celltype_grouped)
+
+saveRDS(dataset.so, file = paste(OUTDIR,"dataset.filtered.grouped.rds",sep ="/"))
+
+
+```
